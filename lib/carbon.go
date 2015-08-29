@@ -41,7 +41,8 @@ type graphCache struct {
 // The event loop for this graphCache
 // It guarantees sequential inserts and flushes
 func (gc *graphCache) run() {
-	fmt.Println("GraphCache %v - INTERNAL RUN", gc.name)
+	fmt.Println("GraphCache - INTERNAL RUN")
+	fmt.Println(gc.name)
 	var dp *DataPoint
 	var flushLimit int64
 	for {
