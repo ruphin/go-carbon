@@ -103,11 +103,17 @@ var graphCaches map[string]*graphCache
 
 // Get the cache for the graph identified by a name
 func GetGraphCache(name string) *graphCache {
+	fmt.Println("Getting GraphCache")
 	var gc *graphCache
 	if gc, exists := graphCaches[name]; !exists { // The graphCache does not exist yet, create it
+
+		fmt.Println("GraphCache does not exist")
 		// Maybe the inputChannel needs a longer queue size to avoid blocking
-		gc = &graphCache{name, make(map[int64]*cacheSlot), make(chan *DataPoint), make(chan int64)} 
+		gc = &graphCache{name, make(map[int64]*cacheSlot), make(chan *DataPoint), make(chan int64)}
+
+		fmt.Println("Running GraphCache")
 		go gc.run() // Start the eventloop for this graphCache
 	}
+	fmt.Println("Returning GraphCache")
 	return gc
 }
