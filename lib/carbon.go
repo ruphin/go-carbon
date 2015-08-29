@@ -76,7 +76,7 @@ func (gc *graphCache) flush(flushLimit timestamp) {
 // Internal insert function. This is called in the runloop for the graphCache to insert dataPoints recieved on the inputChannel
 func (gc *graphCache) insert(dp *DataPoint) {
 	fmt.Println("GraphCache %v - INTERNAL INSERT", gc.name)
-	fmt.Println("VALUE %v", string(json.Marshal(dp)))
+	fmt.Println("VALUE %v", string(dp.value))
 	timeslot := dp.timestamp - (dp.timestamp % 10)
 	if cs, exists := gc.caches[timeslot]; exists {
 		cs.insert(dp.value)

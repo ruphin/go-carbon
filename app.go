@@ -1,6 +1,8 @@
 package app
 
-import "carbon"
+import(
+	carbon "github.com/ruphin/go-carbon/lib"
+)
 import "time"
 
 cache = carbon.GetGraphCache('test')
