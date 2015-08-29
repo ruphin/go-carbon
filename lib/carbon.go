@@ -11,8 +11,8 @@ type timestamp int64
 
 // This is used for input values, timestamp can be anything in the form of a unix timestamp
 type DataPoint struct {
-	value int64
-	timestamp timestamp
+	Value int64
+	Timestamp timestamp
 }
 
 // This represents a value that can be written to whisper. Timeslot can only be a multiple of X where X is the storage interval used in whisper
@@ -75,10 +75,10 @@ func (gc *graphCache) flush(flushLimit timestamp) {
 // Internal insert function. This is called in the runloop for the graphCache to insert dataPoints recieved on the inputChannel
 func (gc *graphCache) insert(dp *DataPoint) {
 	fmt.Println("GraphCache %v - INTERNAL INSERT", gc.name)
-	fmt.Println("VALUE %v", string(dp.value))
-	timeslot := dp.timestamp - (dp.timestamp % 10)
+	fmt.Println("VALUE %v", string(dp.Value))
+	timeslot := dp.Timestamp - (dp.Timestamp % 10)
 	if cs, exists := gc.caches[timeslot]; exists {
-		cs.insert(dp.value)
+		cs.insert(dp.Value)
 		cs.mutationTime = timestamp(time.Now().Unix())
 	} else {
 		gc.caches[timeslot] = &cacheSlot{cs.value, timestamp(time.Now().Unix())}
