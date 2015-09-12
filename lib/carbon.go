@@ -6,7 +6,17 @@ import "fmt"
 // 	whisper "github.com/lomik/go-whisper"
 // )
 
-// This is used for input values, timestamp can be anything in the form of a unix timestamp
+
+// Determines what value is stored in each individual timeslot
+type AggregationMethod int
+const (
+	Average AggregationMethod = iota // Uses two backing whisper databases
+	Min
+	Max
+	None // Store the last value written
+)
+
+// This is used for input values, timestamp is a unix timestamp
 type DataPoint struct {
 	Value int64
 	Timestamp int64
@@ -33,6 +43,7 @@ func (cs *cacheSlot) insert(value int64) {
 // This represents the cache for a single graph (identified uniquely by a string)
 type graphCache struct {
 	name string
+	aggregation int
 	caches map[int64]*cacheSlot
 	inputChan chan *DataPoint
 	flushChan chan int64
@@ -41,8 +52,6 @@ type graphCache struct {
 // The event loop for this graphCache
 // It guarantees sequential inserts and flushes
 func (gc *graphCache) run() {
-	fmt.Println("GraphCache - INTERNAL RUN")
-	fmt.Println(gc.name)
 	var dp *DataPoint
 	var flushLimit int64
 	for {
@@ -58,6 +67,7 @@ func (gc *graphCache) run() {
 // Flush all cacheSlots with a mutationTime smaller than flushLimit
 func (gc *graphCache) flush(flushLimit int64) {
 	fmt.Println("GraphCache %v - INTERNAL FLUSH", gc.name)
+	fmt.Println("Caches: ", gc.caches)
 	var flushTargets = []*timeSlot{}
 	for timeslot, cs := range gc.caches {
 		if cs.mutationTime <= flushLimit {
@@ -65,6 +75,8 @@ func (gc *graphCache) flush(flushLimit int64) {
 			delete(gc.caches, timeslot)
 		}
 	}
+	fmt.Println("FlushTargets: ", flushTargets)
+	fmt.Println("Caches: ", gc.caches)
 
 	// TODO: Write flushTargets to whisper
 	//       In another fiber perhaps to make this non-blocking?
@@ -72,14 +84,12 @@ func (gc *graphCache) flush(flushLimit int64) {
 
 // Internal insert function. This is called in the runloop for the graphCache to insert dataPoints recieved on the inputChannel
 func (gc *graphCache) insert(dp *DataPoint) {
-	fmt.Println("GraphCache %v - INTERNAL INSERT", gc.name)
-	fmt.Println("VALUE %v", string(dp.Value))
 	timeslot := dp.Timestamp - (dp.Timestamp % 10)
 	if cs, exists := gc.caches[timeslot]; exists {
 		cs.insert(dp.Value)
 		cs.mutationTime = time.Now().Unix()
 	} else {
-		gc.caches[timeslot] = &cacheSlot{cs.value, time.Now().Unix()}
+		gc.caches[timeslot] = &cacheSlot{dp.Value, time.Now().Unix()}
 	}
 }
 
@@ -87,14 +97,13 @@ func (gc *graphCache) insert(dp *DataPoint) {
 func (gc *graphCache) Flush(flushLimit int64) {
 	// TODO: Remove a graphCache if it has no cacheSlots and nothing queued in inputChan
 	//       Only flush otherwise
-
-	fmt.Println("GraphCache %v - FLUSH", gc.name)
+	fmt.Printf("GraphCache %v - FLUSH\n", gc.name)
 	gc.flushChan <- flushLimit
 }
 
 // Insert a DataPoint into the graphCache
 func (gc *graphCache) Insert(dp *DataPoint) {
-	fmt.Println("GraphCache %v - INSERT", gc.name)
+	fmt.Printf("GraphCache %v - INSERT\n", gc.name)
 	gc.inputChan <- dp
 }
 
@@ -102,18 +111,17 @@ func (gc *graphCache) Insert(dp *DataPoint) {
 var graphCaches map[string]*graphCache
 
 // Get the cache for the graph identified by a name
-func GetGraphCache(name string) *graphCache {
-	fmt.Println("Getting GraphCache")
+func GetGraphCache(name string, type int) *graphCache {
+	fmt.Printf("Getting GraphCache: %v\n", name)
 	var gc *graphCache
-	if gc, exists := graphCaches[name]; !exists { // The graphCache does not exist yet, create it
-
-		fmt.Println("GraphCache does not exist")
+	var exists bool
+	if gc, exists = graphCaches[name]; !exists { // The graphCache does not exist yet, create it
+		fmt.Println("New Cache")
 		// Maybe the inputChannel needs a longer queue size to avoid blocking
 		gc = &graphCache{name, make(map[int64]*cacheSlot), make(chan *DataPoint), make(chan int64)}
-
-		fmt.Println("Running GraphCache")
 		go gc.run() // Start the eventloop for this graphCache
+	} else {
+		fmt.Println("Existing Cache")
 	}
-	fmt.Println("Returning GraphCache")
 	return gc
 }
