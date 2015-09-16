@@ -6,7 +6,7 @@ import(
 import "time"
 
 func main() {
-	var cache = carbon.GetGraphCache("test")
+	var cache = carbon.Open("test", 1)
 	cache.Insert(&carbon.DataPoint{1, time.Now().Unix()})
 	time.Sleep(5 * time.Second)
 	cache.Insert(&carbon.DataPoint{2, time.Now().Unix()})
