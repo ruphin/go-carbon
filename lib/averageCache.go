@@ -1,21 +1,24 @@
 package carbon
 
-import "fmt"
-import "time"
+import (
+	"time"
+	log "github.com/Sirupsen/logrus"
+	whisper "github.com/lomik/go-whisper"
+)
 
 type averageCache struct {
 	name string
 	subscriptions []Subscription
-	inputChan chan DataPoints
+	inputChan chan []*whisper.TimeSeriesPoint
 	flushChan chan int
 	closeChan chan bool
 	cache map[int]*cacheSlot
-	avgBackend *WhisperBackend
+	valueBackend *WhisperBackend
 	countBackend *WhisperBackend
 }
 
 type cacheSlot struct {
-	Average float64
+	Value float64
 	Count float64
 	LastUpdated int
 }
@@ -23,16 +26,18 @@ type cacheSlot struct {
 // The event loop for this averageCache
 // It guarantees sequential inserts and flushes
 func (self *averageCache) run() {
-	var stop bool
 	var flushLimit int
-	var dataPoints DataPoints
+	var dataPoints []*whisper.TimeSeriesPoint
 	for {
 		select {
-		case stop = <- self.closeChan: // The cache is ordered to close
+		case <- self.closeChan: // The cache is ordered to close
+			log.Debug("Close signal")
 			self.close()
 		case flushLimit = <- self.flushChan: // A flush is queued
+			log.Debug("Flush Signal")
 			self.flush(flushLimit)
 		case dataPoints = <- self.inputChan: // An insert is queued
+			log.Debug("Data Signal")
 			self.insert(dataPoints)
 		}
 	}
@@ -44,36 +49,41 @@ func (self *averageCache) close() {
 
 // Flush all cacheSlots with a mutationTime smaller than flushLimit
 func (self *averageCache) flush(flushLimit int) {
-	fmt.Println("averageCache %v - INTERNAL FLUSH", self.name)
-	var avgFlushTargets DataPoints = make(DataPoints, 2)
-	var countFlushTargets DataPoints = make(DataPoints, 2)
+	log.WithFields(log.Fields{
+		"cache": self.name,
+	}).Debug("Internal Flush")
+	var valueFlushTargets []*whisper.TimeSeriesPoint = make([]*whisper.TimeSeriesPoint, 0)
+	var countFlushTargets []*whisper.TimeSeriesPoint = make([]*whisper.TimeSeriesPoint, 0)
 	for timeSlot, cacheSlot := range self.cache {
 		// TODO: 
 		// Write all changes to subscriptions
 		if cacheSlot.LastUpdated <= flushLimit {
-			avgFlushTargets = append(avgFlushTargets, &DataPoint{timeSlot, cacheSlot.Average})
-			countFlushTargets = append(countFlushTargets, &DataPoint{timeSlot, cacheSlot.Count})
+			valueFlushTargets = append(valueFlushTargets, &whisper.TimeSeriesPoint{timeSlot, cacheSlot.Value})
+			countFlushTargets = append(countFlushTargets, &whisper.TimeSeriesPoint{timeSlot, cacheSlot.Count})
 			delete(self.cache, timeSlot)
 		}
 	}
-	fmt.Println("FlushAverages: ", avgFlushTargets)
-	fmt.Println("FlushCounts: ", countFlushTargets)
+	log.Debug("FlushAverages: ", valueFlushTargets)
+	log.Debug("FlushCounts: ", countFlushTargets)
 
 	// TODO: Write flush targets to whisper
 	//       In another fiber perhaps to make this non-blocking?
-	self.avgBackend.Write(avgFlushTargets)
+	self.valueBackend.Write(valueFlushTargets)
 	self.countBackend.Write(countFlushTargets)
 }
 
 // Internal insert function. This is called in the runloop for the graphCache to insert dataPoints recieved on the inputChannel
-func (self *averageCache) insert(dataPoints DataPoints) {
+func (self *averageCache) insert(dataPoints []*whisper.TimeSeriesPoint) {
+	log.WithFields(log.Fields{
+		"cache": self.name,
+	}).Debug("Internal Insert")
 	var timeSlot int
 	var cs *cacheSlot
 	var exists bool
 	for _, dataPoint := range dataPoints {
 		timeSlot = dataPoint.Time - (dataPoint.Time % 10) // TODO: Custom interval
 		if cs, exists = self.cache[timeSlot]; exists {
-			cs.Average = ((cs.Count * cs.Average) + dataPoint.Value) / (cs.Count + 1)
+			cs.Value += dataPoint.Value
 			cs.Count += 1
 			cs.LastUpdated = int(time.Now().Unix())
 		} else {
@@ -86,18 +96,28 @@ func (self *averageCache) insert(dataPoints DataPoints) {
 func (self *averageCache) Flush(flushLimit int) {
 	// TODO: Remove a graphCache if it has no cacheSlots and nothing queued in inputChan
 	//       Only flush otherwise
-	fmt.Printf("GraphCache %v - FLUSH\n", self.name)
+	log.WithFields(log.Fields{
+		"cache": self.name,
+	}).Debug("Flush")
 	self.flushChan <- flushLimit
 }
 
 // Insert a DataPoint into the graphCache
-func (self *averageCache) Insert(dataPoints DataPoints) {
-	fmt.Printf("GraphCache %v - INSERT\n", self.name)
+func (self *averageCache) Insert(dataPoints []*whisper.TimeSeriesPoint) {
+	log.WithFields(log.Fields{
+		"cache": self.name,
+	}).Debug("Insert")
 	self.inputChan <- dataPoints
 }
 
 func (self *averageCache) Get(subscription Subscription) {
-	subscription.dataChan <- self.avgBackend.Read(subscription.Range)
+	values := self.valueBackend.Read(subscription.Range)
+	counts := self.countBackend.Read(subscription.Range)
+	var result = make([]*whisper.TimeSeriesPoint, len(values))
+	for i, value := range values {
+		result[i] = &whisper.TimeSeriesPoint{value.Time, value.Value / counts[i].Value}
+	}
+	subscription.dataChan <- result
 }
 
 func (self *averageCache) Suscribe(subscription Subscription) {
@@ -105,14 +125,16 @@ func (self *averageCache) Suscribe(subscription Subscription) {
 	self.Get(subscription)
 }
 
-func NewAverageCache(name string) averageCache {
-	return averageCache{
+func NewAverageCache(name string) graphCache {
+	gc := &averageCache{
 		name,
 		make([]Subscription, 10),
-		make(chan DataPoints),
+		make(chan []*whisper.TimeSeriesPoint),
 		make(chan int),
 		make(chan bool),
 		make(map[int]*cacheSlot),
 		nil,
 		nil}
+	go gc.run()
+	return graphCache(gc)
 }

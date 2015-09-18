@@ -1,19 +1,15 @@
 package carbon
 
-import "fmt"
 import (
+	log "github.com/Sirupsen/logrus"
 	whisper "github.com/lomik/go-whisper"
 )
 
 type Subscription struct {
 	closeChan chan bool
-	dataChan chan []DataPoint
+	dataChan chan []*whisper.TimeSeriesPoint
 	Range TimeRange
 }
-
-type DataPoint whisper.TimeSeriesPoint
-
-type DataPoints []*DataPoint
 
 type TimeRange struct {
 	From int
@@ -31,30 +27,31 @@ const (
 
 type graphCache interface {
 	Flush(flushLimit int)
-	Insert(dataPoints DataPoints)
+	Insert(dataPoints []*whisper.TimeSeriesPoint)
 	Get(subscription Subscription)
 	Suscribe(subscription Subscription)
 }
 
 // Get the cache for the graph identified by a name
-func Open(name string, kind Kind) (*graphCache) {
-	fmt.Printf("Getting GraphCache: %v\n", name)
+func Open(name string, kind Kind) (graphCache) {
+	log.WithFields(log.Fields{
+		"cache": name,
+	}).Info("Opening Cache")
 	var gc graphCache
 	var exists bool
 	if gc, exists = caches[kind][name]; !exists { // The graphCache does not exist yet, create it
-		fmt.Println("New Cache")
+		log.Info("New Cache")
 		if kind == AVERAGE {
-			cache := NewAverageCache(name)
-			go cache.run() // Start the eventloop for this graphCache
-			gc = cache
+			log.Info("Average Mode")
+			gc = NewAverageCache(name)
 		}
 	} else {
-		fmt.Println("Existing Cache")
+		log.Info("Existing Cache")
 	}
-	return &gc
+	return gc
 }
 
-var caches [Kind][string]*graphCache = map[Kind][string]*graphCache{
-	AVERAGE: make(map[string]*graphCache),
-	MIN: make(map[string]*graphCache),
-	MAX: make(map[string]*graphCache)}
+var caches = map[Kind]map[string]graphCache{
+	AVERAGE: make(map[string]graphCache),
+	MIN: make(map[string]graphCache),
+	MAX: make(map[string]graphCache)}
