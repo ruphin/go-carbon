@@ -1,20 +1,10 @@
-package carbon
+package cache
 
 import (
 	log "github.com/Sirupsen/logrus"
-	whisper "github.com/lomik/go-whisper"
+	models "github.com/ruphin/go-carbon/models"
 )
 
-type Subscription struct {
-	closeChan chan bool
-	dataChan chan []*whisper.TimeSeriesPoint
-	Range TimeRange
-}
-
-type TimeRange struct {
-	From int
-	Until int
-}
 
 type Kind int
 
@@ -26,8 +16,8 @@ const (
 )
 
 type graphCache interface {
-	Flush(flushLimit int)
-	Insert(dataPoints []*whisper.TimeSeriesPoint)
+	Flush(flushLimit int64)
+	Insert(dataPoints model.DataPoints)
 	Get(subscription Subscription)
 	Suscribe(subscription Subscription)
 }

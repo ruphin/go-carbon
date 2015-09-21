@@ -1,20 +1,21 @@
-package carbon
+package cache
 
 import (
 	"time"
 	log "github.com/Sirupsen/logrus"
-	whisper "github.com/lomik/go-whisper"
+	models "github.com/ruphin/go-carbon/models"
+	models "github.com/ruphin/go-carbon/backend"
 )
 
 type averageCache struct {
 	name string
-	subscriptions []Subscription
-	inputChan chan []*whisper.TimeSeriesPoint
+	subscriptions models.Subscriptions
+	inputChan chan models.DataPoints
 	flushChan chan int
 	closeChan chan bool
 	cache map[int]*cacheSlot
-	valueBackend *WhisperBackend
-	countBackend *WhisperBackend
+	valueBackend *backend.WhisperBackend
+	countBackend *backend.WhisperBackend
 }
 
 type cacheSlot struct {
