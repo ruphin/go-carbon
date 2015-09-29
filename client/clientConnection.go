@@ -48,7 +48,7 @@ func (self *Client) run() {
 	}
 }
 
-func NewClient() (client *Client) {
+func New() (client *Client) {
 	client = &Client{
 		clientConnection: make(chan string),
 	}

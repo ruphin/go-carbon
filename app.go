@@ -8,7 +8,7 @@ import (
 import "time"
 
 func main() {
-	var client = client.NewClient()
+	var client = client.New()
 	log.SetLevel(log.DebugLevel)
 	client.Test("get test.something")
 	time.Sleep(1 * time.Second)
